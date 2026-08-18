@@ -1,0 +1,48 @@
+name: Update potential work calendar
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+      timezone: "America/New_York"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-potential-work-calendar
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install browser for Deep Cuts
+        run: python -m playwright install --with-deps chromium
+
+      - name: Build and test calendar
+        run: |
+          python -m pytest -q
+          python scrape_calendar.py
+
+      - name: Publish refreshed calendar
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add potential-work.ics last-run.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh potential work calendar"
+          git push
