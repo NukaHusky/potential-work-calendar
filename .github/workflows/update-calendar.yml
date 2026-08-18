@@ -1,6 +1,12 @@
 name: Update potential work calendar
 
 on:
+  push:
+    paths:
+      - ".github/workflows/update-calendar.yml"
+      - "scrape_calendar.py"
+      - "requirements.txt"
+      - "test_calendar.py"
   schedule:
     - cron: "0 6 * * *"
       timezone: "America/New_York"
