@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from scrape_calendar import TZ, WorkEvent, render_ics, unique_sorted
+from scrape_calendar import TZ, WorkEvent, parse_optional_clock, render_ics, unique_sorted
 
 
 def test_minimal_event_shape_and_duration():
@@ -28,3 +28,8 @@ def test_duplicate_potential_blocks_are_removed():
         source_key="one",
     )
     assert unique_sorted([event, event]) == [event]
+
+
+def test_relative_cabot_door_time_uses_fallback():
+    assert parse_optional_clock("1 HR PRIOR TO SHOW") is None
+    assert parse_optional_clock("7:00 PM").hour == 19
