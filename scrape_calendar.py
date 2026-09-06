@@ -76,6 +76,14 @@ def parse_clock(value: str) -> clock_time:
     return datetime.strptime(normalized, "%I:%M%p").time()
 
 
+def parse_optional_clock(value: str) -> clock_time | None:
+    """Return a clock time, or None for relative/non-clock door-time text."""
+    try:
+        return parse_clock(value)
+    except ValueError:
+        return None
+
+
 def parse_date_range(value: str) -> list[date]:
     value = clean(value)
     matches = re.findall(r"[A-Z][a-z]+\s+\d{1,2},\s+\d{4}", value)
@@ -145,7 +153,10 @@ def cabot_events() -> list[WorkEvent]:
 
         dates = parse_date_range(rows.get("Date", ""))
         show_times = [parse_clock(v) for v in rows.get("Show Times", "").split("|") if clean(v)]
-        door_times = [parse_clock(v) for v in rows.get("Door Times", "").split("|") if clean(v)]
+        # Cabot sometimes publishes relative text such as "1 HR PRIOR TO SHOW"
+        # instead of a clock time. Preserve its position and use the documented
+        # show-time fallback below rather than failing the entire calendar run.
+        door_times = [parse_optional_clock(v) for v in rows.get("Door Times", "").split("|") if clean(v)]
         if not event_name:
             print(f"Skipping Cabot listing without a usable date/time: {event_url}", file=sys.stderr)
             continue
@@ -181,10 +192,10 @@ def cabot_events() -> list[WorkEvent]:
         for day, show_at, index in instances:
             if day < TODAY:
                 continue
-            if len(door_times) == len(instances):
+            if len(door_times) == len(instances) and door_times[index] is not None:
                 door_at = door_times[min(index, len(door_times) - 1)]
                 start = datetime.combine(day, door_at, TZ) - timedelta(hours=1)
-            elif len(door_times) == 1 and len(instances) == 1:
+            elif len(door_times) == 1 and len(instances) == 1 and door_times[0] is not None:
                 start = datetime.combine(day, door_times[0], TZ) - timedelta(hours=1)
             else:
                 start = datetime.combine(day, show_at, TZ) - timedelta(hours=2)
