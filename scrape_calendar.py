@@ -214,32 +214,48 @@ def cabot_events() -> list[WorkEvent]:
 def chevalier_events() -> list[WorkEvent]:
     url = "https://chevaliertheatre.com/calendar/"
     soup = BeautifulSoup(fetch(url), "html.parser")
-    allowed_ids = {
-        clean(node.get("data-event-id", ""))
-        for node in soup.select('.event-list .event-item[data-venue-id="2"] .event-title[data-event-id]')
-    }
     events: list[WorkEvent] = []
-    for modal in soup.select(".event-modal"):
-        modal_id = modal.get("id", "").removeprefix("event-modal-")
-        if modal_id not in allowed_ids:
+
+    # Chevalier used to embed ticket-time modals in the calendar page. It now
+    # lists only dates there and puts the show time on each event detail page.
+    for card in soup.select('.event-list .event-item[data-venue-id="2"]'):
+        title_node = card.select_one('a.event-title[href*="/event/"]')
+        date_node = card.select_one(".event-date")
+        if not title_node or not date_node:
             continue
-        name_node = modal.select_one(".modal-event-name")
-        info_link = modal.select_one('a.modal-show-info[href*="/event/"]')
-        if not name_node or not info_link:
+
+        event_name = clean(title_node.get_text(" "))
+        event_url = urljoin(url, title_node.get("href", ""))
+        try:
+            reference_day = datetime.strptime(clean(date_node.get_text(" ")), "%b %d, %Y").date()
+        except ValueError:
+            print(f"Skipping unrecognized Chevalier date: {clean(date_node.get_text(' '))}", file=sys.stderr)
             continue
-        event_name = clean(name_node.get_text(" "))
-        event_url = urljoin(url, info_link.get("href", ""))
-        for index, row in enumerate(modal.select(".modal-ticket-row")):
-            when = row.select_one(".modal-ticket-when")
-            if not when:
+
+        detail = BeautifulSoup(fetch(event_url), "html.parser")
+        for index, row in enumerate(detail.select(".event-ticket-row")):
+            ticket_date = row.select_one(".event-ticket-date")
+            ticket_time = row.select_one(".event-ticket-time")
+            if not ticket_date or not ticket_time:
                 continue
             try:
-                show = datetime.strptime(clean(when.get_text(" ")), "%b %d, %Y at %I:%M %p").replace(tzinfo=TZ)
+                month_day = datetime.strptime(clean(ticket_date.get_text(" ")), "%B %d")
+                candidates = [
+                    date(year, month_day.month, month_day.day)
+                    for year in (reference_day.year - 1, reference_day.year, reference_day.year + 1)
+                ]
+                show_day = min(candidates, key=lambda candidate: abs(candidate - reference_day))
+                show_at = parse_clock(clean(ticket_time.get_text(" ")))
             except ValueError:
-                print(f"Skipping unrecognized Chevalier time: {clean(when.get_text(' '))}", file=sys.stderr)
+                print(
+                    f"Skipping unrecognized Chevalier ticket date/time: "
+                    f"{clean(ticket_date.get_text(' '))} {clean(ticket_time.get_text(' '))}",
+                    file=sys.stderr,
+                )
                 continue
-            if show.date() < TODAY:
+            if show_day < TODAY:
                 continue
+            show = datetime.combine(show_day, show_at, TZ)
             events.append(
                 WorkEvent(
                     venue="CHEVALIER THEATRE",
@@ -250,7 +266,6 @@ def chevalier_events() -> list[WorkEvent]:
                 )
             )
     return events
-
 
 def next_date(month: int, day: int) -> date:
     candidate = date(TODAY.year, month, day)
