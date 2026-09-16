@@ -300,10 +300,22 @@ def deep_cuts_events() -> list[WorkEvent]:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(user_agent=HEADERS["User-Agent"])
-        page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-        frame = page.frame_locator("iframe")
-        frame.locator("article").first.wait_for(state="visible", timeout=30_000)
+        last_error: Exception | None = None
+        for attempt in range(3):
+            page = browser.new_page(user_agent=HEADERS["User-Agent"])
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                frame = page.frame_locator("iframe")
+                frame.locator("article").first.wait_for(state="visible", timeout=45_000)
+                break
+            except PlaywrightTimeoutError as exc:
+                last_error = exc
+                page.close()
+                if attempt + 1 < 3:
+                    time.sleep(2**attempt)
+        else:
+            browser.close()
+            raise RuntimeError(f"Deep Cuts event widget did not load after 3 attempts: {last_error}")
 
         for _ in range(30):
             load_more = frame.get_by_text("LOAD MORE", exact=True)
