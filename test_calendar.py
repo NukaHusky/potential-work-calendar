@@ -1,6 +1,13 @@
 from datetime import datetime
 
-from scrape_calendar import TZ, WorkEvent, parse_optional_clock, render_ics, unique_sorted
+from scrape_calendar import (
+    TZ,
+    WorkEvent,
+    parse_chevalier_ticket_date,
+    parse_optional_clock,
+    render_ics,
+    unique_sorted,
+)
 
 
 def test_minimal_event_shape_and_duration():
@@ -33,3 +40,13 @@ def test_duplicate_potential_blocks_are_removed():
 def test_relative_cabot_door_time_uses_fallback():
     assert parse_optional_clock("1 HR PRIOR TO SHOW") is None
     assert parse_optional_clock("7:00 PM").hour == 19
+
+
+def test_chevalier_ticket_date_accepts_explicit_year():
+    reference = datetime(2026, 9, 25).date()
+    assert parse_chevalier_ticket_date("September 25, 2026", reference) == reference
+
+
+def test_chevalier_ticket_date_accepts_legacy_month_day():
+    reference = datetime(2026, 12, 30).date()
+    assert parse_chevalier_ticket_date("December 30", reference) == reference
