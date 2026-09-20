@@ -211,6 +211,20 @@ def cabot_events() -> list[WorkEvent]:
     return events
 
 
+def parse_chevalier_ticket_date(value: str, reference_day: date) -> date:
+    """Parse Chevalier ticket dates with or without an explicit year."""
+    value = clean(value)
+    try:
+        return datetime.strptime(value, "%B %d, %Y").date()
+    except ValueError:
+        month_day = datetime.strptime(value, "%B %d")
+        candidates = [
+            date(year, month_day.month, month_day.day)
+            for year in (reference_day.year - 1, reference_day.year, reference_day.year + 1)
+        ]
+        return min(candidates, key=lambda candidate: abs(candidate - reference_day))
+
+
 def chevalier_events() -> list[WorkEvent]:
     url = "https://chevaliertheatre.com/calendar/"
     soup = BeautifulSoup(fetch(url), "html.parser")
@@ -239,12 +253,7 @@ def chevalier_events() -> list[WorkEvent]:
             if not ticket_date or not ticket_time:
                 continue
             try:
-                month_day = datetime.strptime(clean(ticket_date.get_text(" ")), "%B %d")
-                candidates = [
-                    date(year, month_day.month, month_day.day)
-                    for year in (reference_day.year - 1, reference_day.year, reference_day.year + 1)
-                ]
-                show_day = min(candidates, key=lambda candidate: abs(candidate - reference_day))
+                show_day = parse_chevalier_ticket_date(ticket_date.get_text(" "), reference_day)
                 show_at = parse_clock(clean(ticket_time.get_text(" ")))
             except ValueError:
                 print(
