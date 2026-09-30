@@ -25,7 +25,7 @@ from playwright.sync_api import sync_playwright
 
 TZ = ZoneInfo("America/New_York")
 TODAY = datetime.now(TZ).date()
-EVENING_SHOW_START = clock_time(17, 0)
+DEEP_CUTS_EVENING_SHOW_START = clock_time(17, 0)
 OUTPUT = Path(__file__).with_name("potential-work.ics")
 STATUS_OUTPUT = Path(__file__).with_name("last-run.txt")
 HEADERS = {
@@ -489,13 +489,15 @@ def main() -> None:
     if failures:
         raise RuntimeError("Calendar not replaced because collection failed:\n" + "\n".join(failures))
 
+    # Only Deep Cuts excludes daytime shows; Cabot and Chevalier include all times.
     # Filter on actual showtime, before the earlier work-block start offsets.
     # Collection must still succeed at every venue, even when filtering excludes
     # all of a venue's events.
     events = unique_sorted(
         event for event in all_events
         if event.start.date() >= TODAY
-        and (event.show_start or event.start).astimezone(TZ).time() >= EVENING_SHOW_START
+        and (event.venue != "DEEP CUTS"
+             or (event.show_start or event.start).astimezone(TZ).time() >= DEEP_CUTS_EVENING_SHOW_START)
     )
     OUTPUT.write_text(render_ics(events), encoding="utf-8")
     counts = {venue: sum(event.venue == venue for event in events) for venue in sorted({e.venue for e in events})}

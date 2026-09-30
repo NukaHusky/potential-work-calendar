@@ -134,7 +134,7 @@ def test_evening_filter_uses_showtime_not_work_start(monkeypatch, tmp_path):
     monkeypatch.setattr(calendar, 'TODAY', date(2026, 9, 30))
     monkeypatch.setattr(calendar, 'OUTPUT', tmp_path / 'calendar.ics')
     monkeypatch.setattr(calendar, 'STATUS_OUTPUT', tmp_path / 'last-run.txt')
-    events = [WorkEvent('THE CABOT', label, datetime(2026, 10, 1, 15, tzinfo=TZ), 'url', label,
+    events = [WorkEvent('DEEP CUTS', label, datetime(2026, 10, 1, 15, tzinfo=TZ), 'url', label,
                        datetime(2026, 10, 1, hour, minute, tzinfo=TZ))
               for label, hour, minute in [('morning', 11, 0), ('matinee', 16, 59), ('evening', 17, 0)]]
     yoga = calendar.deep_cuts_partner_events(
@@ -142,7 +142,7 @@ def test_evening_filter_uses_showtime_not_work_start(monkeypatch, tmp_path):
         'https://www.deepcuts.rocks/events')
     monkeypatch.setattr(calendar, 'cabot_events', lambda: events)
     monkeypatch.setattr(calendar, 'chevalier_events', lambda: events)
-    monkeypatch.setattr(calendar, 'deep_cuts_events', lambda: yoga)
+    monkeypatch.setattr(calendar, 'deep_cuts_events', lambda: yoga + events)
     calendar.main()
     result = calendar.OUTPUT.read_text()
     assert 'DESCRIPTION:evening' in result
@@ -169,3 +169,22 @@ def test_deep_cuts_snapshot_preserves_actual_local_showtime(monkeypatch, tmp_pat
     event, = calendar.deep_cuts_events()
     assert event.show_start == datetime(2026, 10, 1, 16, tzinfo=TZ)
     assert event.start.hour == 18
+
+
+@pytest.mark.parametrize('venue,collector', [('THE CABOT', 'cabot_events'), ('CHEVALIER THEATRE', 'chevalier_events')])
+def test_daytime_cabot_and_chevalier_shows_are_retained(monkeypatch, tmp_path, venue, collector):
+    monkeypatch.setattr(calendar, 'TODAY', date(2026, 9, 30))
+    monkeypatch.setattr(calendar, 'OUTPUT', tmp_path / 'calendar.ics')
+    monkeypatch.setattr(calendar, 'STATUS_OUTPUT', tmp_path / 'last-run.txt')
+    daytime = WorkEvent(venue, 'Daytime matinee', datetime(2026, 10, 1, 9, tzinfo=TZ), 'url', venue,
+                        datetime(2026, 10, 1, 11, tzinfo=TZ))
+    night = WorkEvent('DEEP CUTS', 'Night show', datetime(2026, 10, 1, 18, tzinfo=TZ), 'url', 'night',
+                      datetime(2026, 10, 1, 19, tzinfo=TZ))
+    for name in ('cabot_events', 'chevalier_events', 'deep_cuts_events'):
+        monkeypatch.setattr(calendar, name, lambda: [night])
+    monkeypatch.setattr(calendar, collector, lambda: [daytime])
+    calendar.main()
+    result = calendar.OUTPUT.read_text()
+    assert 'DESCRIPTION:Daytime matinee' in result
+    assert 'DESCRIPTION:Night show' in result
+    assert result.count('BEGIN:VEVENT') == 2
