@@ -25,6 +25,7 @@ from playwright.sync_api import sync_playwright
 
 TZ = ZoneInfo("America/New_York")
 TODAY = datetime.now(TZ).date()
+EVENING_SHOW_START = clock_time(17, 0)
 OUTPUT = Path(__file__).with_name("potential-work.ics")
 STATUS_OUTPUT = Path(__file__).with_name("last-run.txt")
 HEADERS = {
@@ -42,6 +43,7 @@ class WorkEvent:
     start: datetime
     source_url: str
     source_key: str
+    show_start: datetime | None = None
 
     @property
     def end(self) -> datetime:
@@ -204,6 +206,7 @@ def cabot_events() -> list[WorkEvent]:
                     venue="THE CABOT",
                     description=event_name,
                     start=start,
+                    show_start=datetime.combine(day, show_at, TZ),
                     source_url=event_url,
                     source_key=f"{event_url}|{day.isoformat()}|{index}",
                 )
@@ -270,6 +273,7 @@ def chevalier_events() -> list[WorkEvent]:
                     venue="CHEVALIER THEATRE",
                     description=event_name,
                     start=show - timedelta(hours=2),
+                    show_start=show,
                     source_url=event_url,
                     source_key=f"{event_url}|{show.date().isoformat()}|{index}",
                 )
@@ -303,6 +307,11 @@ def deep_cuts_partner_events(markup: str, url: str) -> list[WorkEvent]:
             raise RuntimeError(f"Unrecognized Deep Cuts partner card: {text[:200]}")
         name = re.sub(r"^PARTNER EVENTS\s+", "", clean(match.group("name")), flags=re.IGNORECASE)
         event_day = next_date(months[match.group("month").upper()], int(match.group("day")))
+        time_match = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[AP]M)\b", text[match.end():], re.IGNORECASE)
+        if not time_match:
+            raise RuntimeError(f"Missing Deep Cuts partner showtime: {text[:200]}")
+        clock_text = time_match.group(1).upper().replace(" ", "")
+        show_at = datetime.strptime(clock_text, "%I:%M%p" if ":" in clock_text else "%I%p").time()
         link = card.select_one('a[href*="ticketmaster.com/event"]') or card.select_one('a[href^="https://"]')
         event_url = clean(str(link.get("href", ""))) if link else ""
         event_url = event_url or url
@@ -312,6 +321,7 @@ def deep_cuts_partner_events(markup: str, url: str) -> list[WorkEvent]:
         events.append(WorkEvent(
             venue="DEEP CUTS", description=name.title(),
             start=datetime.combine(event_day, clock_time(18, 0), TZ),
+            show_start=datetime.combine(event_day, show_at, TZ),
             source_url=event_url, source_key=source_key,
         ))
     return events
@@ -332,6 +342,7 @@ def deep_cuts_events() -> list[WorkEvent]:
                         venue="DEEP CUTS",
                         description=clean(str(item.get("name", "Deep Cuts event"))),
                         start=datetime.combine(instant.date(), clock_time(18, 0), TZ),
+                        show_start=instant,
                         source_url=event_url,
                         source_key=f"{event_url}|{instant.date().isoformat()}|{index}",
                     )
@@ -389,6 +400,7 @@ def deep_cuts_events() -> list[WorkEvent]:
                         venue="DEEP CUTS",
                         description=clean(str(item.get("name", "Deep Cuts event"))),
                         start=datetime.combine(instant.date(), clock_time(18, 0), TZ),
+                        show_start=instant,
                         source_url=event_url,
                         source_key=f"{event_url}|{instant.date().isoformat()}|{index}",
                     )
@@ -477,7 +489,14 @@ def main() -> None:
     if failures:
         raise RuntimeError("Calendar not replaced because collection failed:\n" + "\n".join(failures))
 
-    events = unique_sorted(event for event in all_events if event.start.date() >= TODAY)
+    # Filter on actual showtime, before the earlier work-block start offsets.
+    # Collection must still succeed at every venue, even when filtering excludes
+    # all of a venue's events.
+    events = unique_sorted(
+        event for event in all_events
+        if event.start.date() >= TODAY
+        and (event.show_start or event.start).astimezone(TZ).time() >= EVENING_SHOW_START
+    )
     OUTPUT.write_text(render_ics(events), encoding="utf-8")
     counts = {venue: sum(event.venue == venue for event in events) for venue in sorted({e.venue for e in events})}
     STATUS_OUTPUT.write_text(
