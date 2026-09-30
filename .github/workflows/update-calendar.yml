@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/update-calendar.yml"
       - "scrape_calendar.py"
+      - "run_calendar.py"
       - "requirements.txt"
       - "test_calendar.py"
   schedule:
@@ -42,7 +43,7 @@ jobs:
       - name: Build and test calendar
         run: |
           python -m pytest -q
-          python scrape_calendar.py
+          python run_calendar.py
 
       - name: Publish refreshed calendar
         run: |
