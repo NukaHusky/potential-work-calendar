@@ -10,6 +10,8 @@ The calendar refreshes every morning at 6:00 AM Eastern. It contains only today 
 
 ## Timing rules
 
+Only shows advertised to start at **5:00 PM or later, Eastern time**, are included at all three venues. This cutoff uses the actual showtime, not the earlier work-block start below. Morning events and afternoon matinees are excluded.
+
 - **Deep Cuts:** 6:00 PM start.
 - **Chevalier Theatre:** one hour before doors. The venue publishes doors as one hour before showtime, so the calendar starts two hours before showtime.
 - **The Cabot:** one hour before the published doors time. If no doors time is published, the calendar starts two hours before showtime.
