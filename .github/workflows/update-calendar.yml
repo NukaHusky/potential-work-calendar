@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/update-calendar.yml"
       - "scrape_calendar.py"
+      - "run_calendar.py"
       - "requirements.txt"
       - "test_calendar.py"
   schedule:
