@@ -43,7 +43,7 @@ jobs:
       - name: Build and test calendar
         run: |
           python -m pytest -q
-          python run_calendar.py
+          python scrape_calendar.py
 
       - name: Publish refreshed calendar
         run: |

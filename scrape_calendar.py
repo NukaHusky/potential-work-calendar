@@ -281,14 +281,45 @@ def next_date(month: int, day: int) -> date:
     return candidate if candidate >= TODAY else date(TODAY.year + 1, month, day)
 
 
+def deep_cuts_partner_events(markup: str, url: str) -> list[WorkEvent]:
+    """Parse leaf partner cards; ticket links are optional, never awaited."""
+    events: list[WorkEvent] = []
+    months = {name: index for index, name in enumerate(
+        ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"), 1
+    )}
+    soup = BeautifulSoup(markup, "html.parser")
+    for card in soup.select("div.w-container.row"):
+        # The section wrapper can match the same selector as its event cards.
+        if card.select_one("div.w-container.row"):
+            continue
+        text = clean(card.get_text(" "))
+        if "BUY TICKETS" not in text.upper():
+            continue
+        match = re.search(
+            r"^(?P<name>.+?)\s+(?P<month>JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+"
+            r"(?P<day>\d{1,2})(?:ST|ND|RD|TH)\b", text, re.IGNORECASE,
+        )
+        if not match:
+            raise RuntimeError(f"Unrecognized Deep Cuts partner card: {text[:200]}")
+        name = re.sub(r"^PARTNER EVENTS\s+", "", clean(match.group("name")), flags=re.IGNORECASE)
+        event_day = next_date(months[match.group("month").upper()], int(match.group("day")))
+        link = card.select_one('a[href*="ticketmaster.com/event"]') or card.select_one('a[href^="https://"]')
+        event_url = clean(str(link.get("href", ""))) if link else ""
+        event_url = event_url or url
+        source_key = f"partner|{event_url}|{event_day.isoformat()}"
+        if event_url == url:
+            source_key += f"|{name.casefold()}"
+        events.append(WorkEvent(
+            venue="DEEP CUTS", description=name.title(),
+            start=datetime.combine(event_day, clock_time(18, 0), TZ),
+            source_url=event_url, source_key=source_key,
+        ))
+    return events
+
+
 def deep_cuts_events() -> list[WorkEvent]:
     url = "https://www.deepcuts.rocks/events"
     events: list[WorkEvent] = []
-    month_numbers = {
-        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
-    }
-
     snapshot_path = os.environ.get("DEEP_CUTS_SNAPSHOT_FILE")
     if snapshot_path:
         snapshot = json.loads(Path(snapshot_path).read_text(encoding="utf-8"))
@@ -331,10 +362,15 @@ def deep_cuts_events() -> list[WorkEvent]:
             try:
                 if load_more.count() == 0 or not load_more.first.is_visible():
                     break
+                previous_count = frame.locator("article").count()
                 load_more.first.click()
-                page.wait_for_timeout(750)
-            except PlaywrightTimeoutError:
-                break
+                frame.locator("article").nth(previous_count).wait_for(state="attached", timeout=15_000)
+            except PlaywrightTimeoutError as exc:
+                browser.close()
+                raise RuntimeError("Deep Cuts pagination failed; refusing a partial calendar") from exc
+        else:
+            browser.close()
+            raise RuntimeError("Deep Cuts pagination exceeded the safety limit")
 
         for index, raw in enumerate(frame.locator('script[type="application/ld+json"]').all_text_contents()):
             try:
@@ -358,30 +394,7 @@ def deep_cuts_events() -> list[WorkEvent]:
                     )
                 )
 
-        for card in page.locator("div.w-container.row").all():
-            text = clean(card.inner_text())
-            if "BUY TICKETS" not in text.upper():
-                continue
-            match = re.search(
-                r"^(?P<name>.+?)\s+(?P<month>JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+"
-                r"(?P<day>\d{1,2})(?:ST|ND|RD|TH)\b",
-                text,
-                re.IGNORECASE,
-            )
-            if not match:
-                continue
-            event_day = next_date(month_numbers[match.group("month").upper()], int(match.group("day")))
-            link = card.locator('a[href*="ticketmaster.com/event"]').first
-            event_url = link.get_attribute("href") or url
-            events.append(
-                WorkEvent(
-                    venue="DEEP CUTS",
-                    description=clean(match.group("name")).title(),
-                    start=datetime.combine(event_day, clock_time(18, 0), TZ),
-                    source_url=event_url,
-                    source_key=f"partner|{event_url}|{event_day.isoformat()}",
-                )
-            )
+        events.extend(deep_cuts_partner_events(page.content(), url))
         browser.close()
     return events
 
